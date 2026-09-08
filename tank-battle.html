@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>TANK BATTLE — three.js demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1d16; cursor: crosshair; }
+  #hud {
+    position: fixed; top: 16px; left: 16px; color: #e8e6d8;
+    font-family: "Courier New", monospace; user-select: none; pointer-events: none;
+  }
+  #hpbar { width: 180px; height: 12px; border: 2px solid #e8e6d8; margin-top: 6px; }
+  #hpfill { height: 100%; width: 100%; background: #7fbf5f; transition: width .15s; }
+  #score { font-size: 20px; letter-spacing: 2px; }
+  #buffs { margin-top: 6px; font-size: 13px; }
+  #buffs div { margin-top: 2px; }
+  #help {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    color: #8a8f7a; font-family: "Courier New", monospace; font-size: 13px;
+    user-select: none; pointer-events: none; white-space: nowrap;
+  }
+  #overlay {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    flex-direction: column; background: rgba(15, 17, 12, .78);
+    color: #e8e6d8; font-family: "Courier New", monospace;
+  }
+  #overlay h1 { font-size: 42px; letter-spacing: 6px; margin: 0 0 10px; }
+  #overlay p { margin: 4px 0 18px; color: #b0b49e; }
+  #overlay button {
+    font-family: inherit; font-size: 16px; letter-spacing: 2px; cursor: pointer;
+    background: #7fbf5f; color: #1a1d16; border: none; padding: 10px 26px;
+  }
+  #overlay button:hover { background: #93d472; }
+  #muteBtn {
+    position: fixed; top: 16px; right: 20px; font-size: 22px;
+    cursor: pointer; user-select: none; opacity: .8; filter: grayscale(.15);
+  }
+  #muteBtn:hover { opacity: 1; }
+  #waveInfo { margin-top: 4px; color: #d9a441; letter-spacing: 1px; }
+  #menu, #skillMenu {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; background: rgba(15, 17, 12, .92); text-align: center;
+    color: #e8e6d8; font-family: "Courier New", monospace;
+  }
+  #menu h1, #skillMenu h1 { font-size: 40px; letter-spacing: 6px; margin: 0 0 6px; }
+  #menu p, #skillMenu p { margin: 4px 0 18px; color: #b0b49e; }
+  #menuButtons { display: flex; flex-direction: column; gap: 12px; }
+  #menu button, #skillMenu button {
+    font-family: inherit; font-size: 16px; letter-spacing: 2px; cursor: pointer;
+    background: #7fbf5f; color: #1a1d16; border: none; padding: 10px 26px;
+  }
+  #menu button:hover, #skillMenu button:hover { background: #93d472; }
+  #menu button:disabled {
+    background: #4a4f40; color: #8a8f7a; cursor: not-allowed;
+  }
+  #skillRows { display: flex; flex-direction: column; gap: 10px; margin-bottom: 22px; min-width: 300px; }
+  .skillRow { display: flex; align-items: center; justify-content: space-between; font-size: 14px; }
+  .skillRow .ctrl { display: flex; align-items: center; gap: 8px; }
+  .skillRow button { padding: 2px 12px; font-size: 16px; }
+  .skillRow .val { width: 22px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="score">SCORE 0</div>
+  <div id="waveInfo"></div>
+  <div id="hpbar"><div id="hpfill"></div></div>
+  <div id="buffs"></div>
+</div>
+<div id="help">WASD 移動 · 滑鼠瞄準 · 點擊 / 空白鍵開砲</div>
+<div id="muteBtn" title="音樂/音效開關">🔊</div>
+<div id="overlay">
+  <h1>YOU DIED</h1>
+  <p id="finalScore"></p>
+  <button id="restart">RESTART</button>
+</div>
+<div id="menu">
+  <h1>TANK BATTLE</h1>
+  <p>選擇模式</p>
+  <div id="menuButtons">
+    <button id="modeEndless">無限亂鬥</button>
+    <button id="modeSurvival">無限生存</button>
+    <button id="modeCampaign" disabled>闖關模式（開發中）</button>
+  </div>
+</div>
+<div id="skillMenu" style="display:none">
+  <h1 id="skillMenuWave">WAVE CLEAR</h1>
+  <p>剩餘點數：<span id="pointsLeft">0</span></p>
+  <div id="skillRows"></div>
+  <button id="skillConfirm">確認</button>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js",
+  "tone": "https://esm.sh/tone@14.8.49",
+  "@tonejs/midi": "https://esm.sh/@tonejs/midi@2.0.28"
+} }
+</script>
+<script type="module" src="./src/game.js"></script>
+</body>
+</html>
