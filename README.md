@@ -1,5 +1,7 @@
 # Tank Battle
 
+**🎮 [直接玩：https://issuehuang.github.io/mini_game_tank_battle/](https://issuehuang.github.io/mini_game_tank_battle/)**
+
 用 [three.js](https://threejs.org/) + [Tone.js](https://tonejs.github.io/) 做的瀏覽器 3D 坦克對戰小遊戲。沒有任何美術/音效素材檔案——所有模型都是程式組出來的幾何體，所有聲音跟音樂都是即時合成的。
 
 這份 README 除了說明專案本身，也記錄了做這個專案過程中踩到、學到的東西，當作給自己以後回顧用。詳細的規格與決策歷史在 [`spec.md`](spec.md)。
@@ -20,7 +22,7 @@
 python3 -m http.server
 ```
 
-然後開 `http://localhost:8000/tank-battle.html`。
+然後開 `http://localhost:8000/index.html`。
 
 ## 技術堆疊
 
@@ -77,7 +79,7 @@ python3 -m http.server
 ## 專案結構
 
 ```
-tank-battle.html          HTML 外殼（CSS、HUD 標記、importmap）
+index.html                遊戲入口（HTML 外殼：CSS、HUD 標記、importmap）
 music.html                MIDI + Tone.js 播放技術的獨立原型測試頁
 spec.md                   完整規格書與決策歷史
 src/
