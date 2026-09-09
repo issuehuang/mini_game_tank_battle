@@ -2,8 +2,9 @@
 const menuEl = document.getElementById('menu');
 const btnEndless = document.getElementById('modeEndless');
 const btnSurvival = document.getElementById('modeSurvival');
+const btnTest = document.getElementById('modeTest');
 
-// 顯示主選單，玩家選好模式後呼叫 onSelect('endless' | 'survival')，選單自動隱藏
+// 顯示主選單，玩家選好模式後呼叫 onSelect('endless' | 'survival' | 'test')，選單自動隱藏
 export function showModeMenu(onSelect) {
   menuEl.style.display = 'flex';
   const pick = mode => {
@@ -12,4 +13,5 @@ export function showModeMenu(onSelect) {
   };
   btnEndless.onclick = () => pick('endless');
   btnSurvival.onclick = () => pick('survival');
+  btnTest.onclick = () => pick('test');
 }

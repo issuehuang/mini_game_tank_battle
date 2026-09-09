@@ -40,6 +40,18 @@ export const CONFIG = {
     shootAimThreshold: 0.12,
   },
 
+  // 闖關模式 / 測試模式的敵人種類（見 spec.md §6.3）：canEngage/canRetreat 決定 AI 拿掉哪個狀態
+  enemyTypes: {
+    standard: { hp: 30, dmg: 12, speed: 4.5, scale: 1, color: 0xc75c4a, turnMult: 1, canEngage: true, canRetreat: true },
+    scout: { hp: 15, dmg: 8, speed: 7.5, scale: 0.8, color: 0xe8a23c, turnMult: 1, canEngage: false, canRetreat: true },
+    heavy: { hp: 60, dmg: 20, speed: 2.5, scale: 1.3, color: 0x6b3530, turnMult: 0.7, canEngage: true, canRetreat: false },
+  },
+
+  // 地形特效（見 spec.md §6.3，闖關模式沙漠地形）
+  terrain: {
+    dustSlowMult: 0.5, // 站在沙塵區內時的移動速度倍率
+  },
+
   bullet: {
     speed: 30,
     ttl: 2.5,

@@ -10,11 +10,14 @@ import {
   SURVIVAL, resetSurvival, enemyStatsForWave, registerKill, armorReduction, hitQuadrant,
   weaponCooldown, weaponDamage, missileCooldown, missileSpeedMult, showSkillMenu,
 } from './survival.js';
+import { LEVELS } from './levels.js';
+import { showTestMenu } from './testmode.js';
 
 // ---------- 遊戲模式 ----------
-let gameMode = 'endless'; // 'endless' | 'survival'，由主選單決定
+let gameMode = 'endless'; // 'endless' | 'survival' | 'test'，由主選單決定
 let gameStarted = false; // 選好模式前，場景照常渲染但玩法邏輯不跑
 let missileAbilityCooldown = 0; // 無限生存模式：飛彈變成主動技能後的冷卻計時
+let testEnemyTypePool = ['standard']; // 測試模式：勾選的敵人種類池，生成時隨機挑一種
 
 // ---------- 基本場景 ----------
 const scene = new THREE.Scene();
@@ -62,6 +65,16 @@ function wallLocalToWorldDelta(wall, lx, lz) {
 }
 
 const walls = []; // {mesh, x, z, halfW, halfD, rot, min:{x,z}, max:{x,z}}（min/max 是旋轉後的外接框，僅供概略避開用）
+
+// 沙塵區（測試模式/闖關模式載入關卡時填入）：站在區域內移動速度打折
+let dustZones = [];
+function dustSpeedMult(x, z) {
+  for (const dz of dustZones) {
+    const d2 = (x - dz.x) ** 2 + (z - dz.z) ** 2;
+    if (d2 < dz.r * dz.r) return CONFIG.terrain.dustSlowMult;
+  }
+  return 1;
+}
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a6f4d, roughness: .9 });
 function addWall(x, z, w, d, h = 2.2, rot = 0) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
@@ -77,17 +90,28 @@ function addWall(x, z, w, d, h = 2.2, rot = 0) {
   wall.max = { x: x + Math.max(...corners.map(c => c.x)), z: z + Math.max(...corners.map(c => c.z)) };
   walls.push(wall);
 }
-// 外圍
+// 外圍（固定不變，不隨關卡切換）
 addWall(0, -ARENA - 1, ARENA * 2 + 4, 2, 3);
 addWall(0, ARENA + 1, ARENA * 2 + 4, 2, 3);
 addWall(-ARENA - 1, 0, 2, ARENA * 2 + 4, 3);
 addWall(ARENA + 1, 0, 2, ARENA * 2 + 4, 3);
+const BOUNDARY_WALL_COUNT = walls.length;
+
 // 內部掩體（第 5 個欄位可選填旋轉角度，弧度，不填預設 0）
 const layout = [
   [-14, -14, 8, 3], [14, -14, 8, 3], [-14, 14, 8, 3], [14, 14, 8, 3],
   [0, -8, 3, 8], [0, 8, 3, 8], [-24, 0, 3, 10], [24, 0, 3, 10],
 ];
 layout.forEach(([x, z, w, d, rot]) => addWall(x, z, w, d, undefined, rot));
+
+// 測試模式 / 未來闖關模式切換關卡用：移除外圍以外的牆，換上新關卡的牆體佈局
+function loadLevelWalls(levelWalls) {
+  while (walls.length > BOUNDARY_WALL_COUNT) {
+    const w = walls.pop();
+    scene.remove(w.mesh);
+  }
+  levelWalls.forEach(([x, z, w, d, rot]) => addWall(x, z, w, d, undefined, rot));
+}
 
 // ---------- 玩家 ----------
 const player = {
@@ -118,15 +142,25 @@ scene.add(reticle);
 // ---------- 敵人 ----------
 const enemies = [];
 const SPAWNS = [[-30, -30], [30, -30], [-30, 30], [30, 30]];
-function spawnEnemy() {
+// type 給定時（闖關/測試模式用）套用 CONFIG.enemyTypes 的種類數值；不給時沿用原本無限亂鬥/無限生存的邏輯
+function spawnEnemy(type) {
   const [x, z] = SPAWNS[Math.floor(Math.random() * SPAWNS.length)];
-  const stats = gameMode === 'survival' ? enemyStatsForWave(SURVIVAL.wave) : { hp: CONFIG.enemy.hp, dmg: CONFIG.enemy.dmg };
+  const typeCfg = CONFIG.enemyTypes[type];
+  let hp, dmg, speed, color, scale;
+  if (typeCfg) {
+    ({ hp, dmg, speed, color, scale } = typeCfg);
+  } else {
+    const stats = gameMode === 'survival' ? enemyStatsForWave(SURVIVAL.wave) : { hp: CONFIG.enemy.hp, dmg: CONFIG.enemy.dmg };
+    hp = stats.hp; dmg = stats.dmg; speed = CONFIG.enemy.speed; color = 0xc75c4a; scale = 1;
+  }
   const e = {
-    mesh: makeTank(0xc75c4a),
-    hp: stats.hp, dmg: stats.dmg, speed: CONFIG.enemy.speed, radius: CONFIG.enemy.radius,
+    mesh: makeTank(color),
+    hp, dmg, speed, radius: CONFIG.enemy.radius * scale,
+    type: type && typeCfg ? type : 'standard',
     shootTimer: CONFIG.enemy.shootTimerInitMin + Math.random() * CONFIG.enemy.shootTimerInitRange,
     strafeDir: Math.random() < 0.5 ? 1 : -1,
   };
+  e.mesh.scale.setScalar(scale);
   e.mesh.position.set(x, 0, z);
   scene.add(e.mesh);
   enemies.push(e);
@@ -150,12 +184,12 @@ const POWERUP_KINDS = [
 const TESTING_ONLY_POWERUP = 'missile';
 
 function spawnPowerup() {
-  // 無限生存模式：飛彈是主動技能（見 launchMissileBarrage 的 Q 鍵觸發），不再隨機掉落
-  const available = gameMode === 'survival'
+  // 無限生存模式／測試模式：飛彈是主動技能（見 launchMissileBarrage 的 Q 鍵觸發），不再隨機掉落
+  const available = usesUpgrades()
     ? POWERUP_KINDS.filter(k => k.type !== 'missile')
     : POWERUP_KINDS;
   let kind;
-  if (TESTING_ONLY_POWERUP && gameMode !== 'survival') {
+  if (TESTING_ONLY_POWERUP && !usesUpgrades()) {
     kind = POWERUP_KINDS.find(k => k.type === TESTING_ONLY_POWERUP);
   } else {
     const total = available.reduce((s, k) => s + k.weight, 0);
@@ -228,7 +262,7 @@ function launchMissileBarrage() {
       const initDir = e.mesh.position.clone().setY(CONFIG.missile.launchHeight).sub(launchPos).normalize();
       initDir.y = Math.min(1, initDir.y + 0.6); // 先拉高一點再壓下來，比較有飛彈感
       initDir.normalize();
-      const speed = gameMode === 'survival' ? CONFIG.missile.speed * missileSpeedMult() : CONFIG.missile.speed;
+      const speed = usesUpgrades() ? CONFIG.missile.speed * missileSpeedMult() : CONFIG.missile.speed;
       missiles.push({ mesh, target: e, dir: initDir, speed, ttl: CONFIG.missile.ttl, lockMark });
     }, i * CONFIG.missile.launchStaggerMs);
   });
@@ -246,7 +280,7 @@ function shoot(fromMesh, turret, isPlayer, enemyDmg) {
   const mat = isPlayer ? (boosted ? pBulletBoostMat : pBulletMat) : eBulletMat;
   let dmg;
   if (isPlayer) {
-    dmg = gameMode === 'survival' ? weaponDamage() * (boosted ? 2 : 1) : (boosted ? CONFIG.player.dmgBoosted : CONFIG.player.dmg);
+    dmg = usesUpgrades() ? weaponDamage() * (boosted ? 2 : 1) : (boosted ? CONFIG.player.dmgBoosted : CONFIG.player.dmg);
   } else {
     dmg = enemyDmg != null ? enemyDmg : CONFIG.enemy.dmg;
   }
@@ -281,7 +315,7 @@ addEventListener('keydown', e => {
   ensureAudio();
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
-  if (e.code === 'KeyQ' && gameMode === 'survival' && gameStarted && player.alive && missileAbilityCooldown <= 0) {
+  if (e.code === 'KeyQ' && usesUpgrades() && gameStarted && player.alive && missileAbilityCooldown <= 0) {
     launchMissileBarrage();
     missileAbilityCooldown = missileCooldown();
   }
@@ -319,6 +353,12 @@ function bulletHitsWall(pos) {
   });
 }
 
+// 無限生存模式 + 測試模式共用的「有技能點數值系統」判定（方位裝甲/武器/飛彈加成、飛彈變主動技能）
+// 測試模式沒有波次/配點面板，只是直接套用數值，所以 onEnemyKilled() 不包含在內
+function usesUpgrades() {
+  return gameMode === 'survival' || gameMode === 'test';
+}
+
 // 無限生存模式：每殺一隻敵人呼叫，殺滿一波、且該波是 5 的倍數時暫停遊戲跳出配點畫面
 function onEnemyKilled() {
   if (gameMode !== 'survival') return;
@@ -344,7 +384,7 @@ function updateHUD() {
   let buffHtml = '';
   if (player.shieldTimer > 0) buffHtml += `<div style="color:#5ec8f0">🛡 護盾 ${player.shieldTimer.toFixed(1)}s</div>`;
   if (player.rapidFireTimer > 0) buffHtml += `<div style="color:#ffcf4a">⚡ 火力強化 ${player.rapidFireTimer.toFixed(1)}s</div>`;
-  if (gameMode === 'survival') {
+  if (usesUpgrades()) {
     buffHtml += missileAbilityCooldown > 0
       ? `<div style="color:#ff8866">🚀 飛彈冷卻 ${missileAbilityCooldown.toFixed(1)}s</div>`
       : `<div style="color:#ff5533">🚀 飛彈就緒（按 Q）</div>`;
@@ -398,8 +438,9 @@ function tick() {
     if (keys['KeyA']) player.mesh.rotation.y += CONFIG.player.turnRate * dt;
     if (keys['KeyD']) player.mesh.rotation.y -= CONFIG.player.turnRate * dt;
     const forward = new THREE.Vector3(0, 0, -1).applyEuler(player.mesh.rotation);
-    if (keys['KeyW']) player.mesh.position.addScaledVector(forward, player.speed * dt);
-    if (keys['KeyS']) player.mesh.position.addScaledVector(forward, -player.speed * CONFIG.player.reverseSpeedMult * dt);
+    const pDustMult = dustSpeedMult(player.mesh.position.x, player.mesh.position.z);
+    if (keys['KeyW']) player.mesh.position.addScaledVector(forward, player.speed * pDustMult * dt);
+    if (keys['KeyS']) player.mesh.position.addScaledVector(forward, -player.speed * CONFIG.player.reverseSpeedMult * pDustMult * dt);
     collideWalls(player.mesh.position, player.radius);
 
     // 砲塔瞄準滑鼠
@@ -417,7 +458,7 @@ function tick() {
     if ((mouseDown || keys['Space']) && player.cooldown <= 0) {
       shoot(player.mesh, player.mesh.userData.turret, true);
       const boosted = player.rapidFireTimer > 0;
-      if (gameMode === 'survival') {
+      if (usesUpgrades()) {
         player.cooldown = boosted ? Math.min(weaponCooldown(), CONFIG.player.cooldownBoosted) : weaponCooldown();
       } else {
         player.cooldown = boosted ? CONFIG.player.cooldownBoosted : CONFIG.player.cooldown;
@@ -446,11 +487,13 @@ function tick() {
   // 敵人 AI
   spawnTimer -= dt;
   if (spawnTimer <= 0 && enemies.length < CONFIG.enemy.maxCount && player.alive) {
-    spawnEnemy();
+    const type = gameMode === 'test' ? testEnemyTypePool[Math.floor(Math.random() * testEnemyTypePool.length)] : undefined;
+    spawnEnemy(type);
     spawnTimer = CONFIG.enemy.spawnInterval;
   }
   const ENGAGE_DIST = CONFIG.enemy.engageDist, RETREAT_DIST = CONFIG.enemy.retreatDist;
   for (const e of enemies) {
+    const typeCfg = CONFIG.enemyTypes[e.type] || CONFIG.enemyTypes.standard;
     const toPlayer = player.mesh.position.clone().sub(e.mesh.position);
     const dist = toPlayer.length();
 
@@ -460,13 +503,15 @@ function tick() {
     const turretTarget = Math.atan2(-localAim.x, -localAim.z);
     let turretDa = turretTarget - turret.rotation.y;
     turretDa = Math.atan2(Math.sin(turretDa), Math.cos(turretDa));
-    turret.rotation.y += THREE.MathUtils.clamp(turretDa, -CONFIG.enemy.turretTurnRate * dt, CONFIG.enemy.turretTurnRate * dt);
+    const turretRate = CONFIG.enemy.turretTurnRate * typeCfg.turnMult;
+    turret.rotation.y += THREE.MathUtils.clamp(turretDa, -turretRate * dt, turretRate * dt);
 
     // 車身朝向：依距離決定「衝過去 / 繞圈 / 掉頭拉開」，履帶車不會平移，只會轉向再前進
+    // 偵查兵沒有「逼近」狀態（canEngage=false）、重裝兵沒有「拉開」狀態（canRetreat=false）
     let hullTarget;
-    if (dist > ENGAGE_DIST) {
+    if (dist > ENGAGE_DIST && typeCfg.canEngage) {
       hullTarget = Math.atan2(-toPlayer.x, -toPlayer.z); // 朝向玩家逼近
-    } else if (dist < RETREAT_DIST) {
+    } else if (dist < RETREAT_DIST && typeCfg.canRetreat) {
       hullTarget = Math.atan2(toPlayer.x, toPlayer.z); // 背向玩家，拉開距離
     } else {
       const tangent = new THREE.Vector3(toPlayer.z, 0, -toPlayer.x).multiplyScalar(e.strafeDir);
@@ -474,11 +519,13 @@ function tick() {
     }
     let hullDa = hullTarget - e.mesh.rotation.y;
     hullDa = Math.atan2(Math.sin(hullDa), Math.cos(hullDa));
-    e.mesh.rotation.y += THREE.MathUtils.clamp(hullDa, -CONFIG.enemy.hullTurnRate * dt, CONFIG.enemy.hullTurnRate * dt);
+    const hullRate = CONFIG.enemy.hullTurnRate * typeCfg.turnMult;
+    e.mesh.rotation.y += THREE.MathUtils.clamp(hullDa, -hullRate * dt, hullRate * dt);
 
     if (Math.abs(hullDa) < CONFIG.enemy.hullMoveThreshold) {
       const f = new THREE.Vector3(0, 0, -1).applyEuler(e.mesh.rotation);
-      e.mesh.position.addScaledVector(f, e.speed * dt);
+      const eDustMult = dustSpeedMult(e.mesh.position.x, e.mesh.position.z);
+      e.mesh.position.addScaledVector(f, e.speed * eDustMult * dt);
     }
     collideWalls(e.mesh.position, e.radius);
 
@@ -556,7 +603,7 @@ function tick() {
           playImpact();
         } else {
           let dmg = b.dmg;
-          if (gameMode === 'survival') {
+          if (usesUpgrades()) {
             const worldFrom = b.dir.clone().negate(); // 子彈是從哪個方向飛來的
             const localFrom = player.mesh.worldToLocal(player.mesh.position.clone().add(worldFrom));
             dmg *= 1 - armorReduction(hitQuadrant(localFrom));
@@ -599,14 +646,32 @@ function tick() {
 }
 
 const helpEl = document.getElementById('help');
+function addMissileHint() {
+  const qHint = document.createElement('div');
+  qHint.textContent = 'Q 發射飛彈';
+  helpEl.appendChild(qHint);
+}
 showModeMenu(mode => {
   ensureAudio();
   gameMode = mode;
   if (gameMode === 'survival') {
     resetSurvival();
-    helpEl.textContent += ' · Q 發射飛彈';
+    addMissileHint();
+    gameStarted = true;
+  } else if (gameMode === 'test') {
+    showTestMenu(cfg => {
+      testEnemyTypePool = cfg.enemyTypes;
+      const level = LEVELS[cfg.levelIndex];
+      loadLevelWalls(level.walls);
+      dustZones = level.dust || [];
+      resetSurvival();
+      SURVIVAL.upgrades = { ...cfg.upgrades };
+      addMissileHint();
+      gameStarted = true;
+    });
+  } else {
+    gameStarted = true;
   }
-  gameStarted = true;
 });
 tick();
 

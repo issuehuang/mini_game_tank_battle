@@ -15,9 +15,10 @@
   #buffs { margin-top: 6px; font-size: 13px; }
   #buffs div { margin-top: 2px; }
   #help {
-    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-    color: #8a8f7a; font-family: "Courier New", monospace; font-size: 13px;
-    user-select: none; pointer-events: none; white-space: nowrap;
+    position: fixed; top: 56px; right: 20px; text-align: right;
+    color: #e8e6d8; font-family: "Courier New", monospace; font-size: 13px;
+    line-height: 1.7; user-select: none; pointer-events: none; white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0,0,0,.6);
   }
   #overlay {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
@@ -58,6 +59,38 @@
   .skillRow .ctrl { display: flex; align-items: center; gap: 8px; }
   .skillRow button { padding: 2px 12px; font-size: 16px; }
   .skillRow .val { width: 22px; text-align: center; }
+
+  #testMenu {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(15, 17, 12, .92); color: #e8e6d8; font-family: "Courier New", monospace;
+  }
+  #testPanel {
+    max-height: 86vh; overflow-y: auto; padding: 28px 32px; text-align: left;
+    background: #23271c; border: 1px solid #3a3f30; min-width: 320px;
+  }
+  #testPanel h1 { font-size: 26px; letter-spacing: 4px; margin: 0 0 18px; text-align: center; }
+  #testPanel section { margin-bottom: 20px; }
+  #testPanel h3 {
+    font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #8a8f7a;
+    margin: 0 0 10px; border-bottom: 1px solid #3a3f30; padding-bottom: 6px;
+  }
+  #testEnemyTypes { display: flex; gap: 18px; flex-wrap: wrap; }
+  #testEnemyTypes label { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+  #testLevelSelect {
+    width: 100%; font-family: inherit; font-size: 14px; padding: 6px 8px;
+    background: #1a1d16; color: #e8e6d8; border: 1px solid #3a3f30;
+  }
+  #testStatGrid { display: grid; grid-template-columns: 1fr 64px; row-gap: 10px; column-gap: 12px; align-items: center; }
+  #testStatGrid label { font-size: 13px; color: #cfcabb; }
+  #testStatGrid input {
+    width: 64px; font-family: inherit; font-size: 14px; padding: 4px 6px; text-align: right;
+    background: #1a1d16; color: #e8e6d8; border: 1px solid #3a3f30;
+  }
+  #testPanel button {
+    font-family: inherit; font-size: 16px; letter-spacing: 2px; cursor: pointer;
+    background: #7fbf5f; color: #1a1d16; border: none; padding: 10px 26px; width: 100%; margin-top: 4px;
+  }
+  #testPanel button:hover { background: #93d472; }
 </style>
 </head>
 <body>
@@ -67,8 +100,11 @@
   <div id="hpbar"><div id="hpfill"></div></div>
   <div id="buffs"></div>
 </div>
-<div id="help">WASD 移動 · 滑鼠瞄準 · 點擊 / 空白鍵開砲</div>
 <div id="muteBtn" title="音樂/音效開關">🔊</div>
+<div id="help">
+  <div>WASD 移動 · 滑鼠瞄準</div>
+  <div>點擊 / 空白鍵 開砲</div>
+</div>
 <div id="overlay">
   <h1>YOU DIED</h1>
   <p id="finalScore"></p>
@@ -81,6 +117,7 @@
     <button id="modeEndless">無限亂鬥</button>
     <button id="modeSurvival">無限生存</button>
     <button id="modeCampaign" disabled>闖關模式（開發中）</button>
+    <button id="modeTest">測試模式</button>
   </div>
 </div>
 <div id="skillMenu" style="display:none">
@@ -88,6 +125,35 @@
   <p>剩餘點數：<span id="pointsLeft">0</span></p>
   <div id="skillRows"></div>
   <button id="skillConfirm">確認</button>
+</div>
+<div id="testMenu">
+  <div id="testPanel">
+    <h1>測試模式</h1>
+    <section>
+      <h3>敵人種類（可複選，至少選一種）</h3>
+      <div id="testEnemyTypes">
+        <label><input type="checkbox" value="standard" checked> 標準兵</label>
+        <label><input type="checkbox" value="scout"> 偵查兵</label>
+        <label><input type="checkbox" value="heavy"> 重裝兵</label>
+      </div>
+    </section>
+    <section>
+      <h3>關卡</h3>
+      <select id="testLevelSelect"></select>
+    </section>
+    <section>
+      <h3>玩家技能點數（直接套用，不用實際打波次累積）</h3>
+      <div id="testStatGrid">
+        <label for="testArmorFront">🛡 前方裝甲</label><input type="number" id="testArmorFront" value="0" min="0">
+        <label for="testArmorBack">🛡 後方裝甲</label><input type="number" id="testArmorBack" value="0" min="0">
+        <label for="testArmorLeft">🛡 左方裝甲</label><input type="number" id="testArmorLeft" value="0" min="0">
+        <label for="testArmorRight">🛡 右方裝甲</label><input type="number" id="testArmorRight" value="0" min="0">
+        <label for="testWeapon">⚔ 主武器火力</label><input type="number" id="testWeapon" value="0" min="0">
+        <label for="testMissile">🚀 特殊武器火力</label><input type="number" id="testMissile" value="0" min="0">
+      </div>
+    </section>
+    <button id="testStart">開始測試</button>
+  </div>
 </div>
 
 <script type="importmap">
