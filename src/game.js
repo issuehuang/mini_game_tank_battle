@@ -48,26 +48,46 @@ ground.receiveShadow = true;
 scene.add(ground);
 scene.add(new THREE.GridHelper(ARENA * 2 + 4, 36, 0x4a5240, 0x2f3528));
 
-const walls = []; // {mesh, min:{x,z}, max:{x,z}}
+// 牆體局部座標系轉換（跟砲塔瞄準/方位裝甲用的是同一套 Y 軸旋轉數學）
+// world -> wall-local：先減掉牆的中心位置，再轉回牆自己的旋轉角度
+function worldToWallLocal(wall, x, z) {
+  const dx = x - wall.x, dz = z - wall.z;
+  const c = Math.cos(wall.rot), s = Math.sin(wall.rot);
+  return { x: dx * c - dz * s, z: dx * s + dz * c };
+}
+// wall-local 向量（例如碰撞推開量）-> world 向量：套用牆的旋轉角度轉回世界座標
+function wallLocalToWorldDelta(wall, lx, lz) {
+  const c = Math.cos(wall.rot), s = Math.sin(wall.rot);
+  return { x: lx * c + lz * s, z: -lx * s + lz * c };
+}
+
+const walls = []; // {mesh, x, z, halfW, halfD, rot, min:{x,z}, max:{x,z}}（min/max 是旋轉後的外接框，僅供概略避開用）
 const wallMat = new THREE.MeshStandardMaterial({ color: 0x8a6f4d, roughness: .9 });
-function addWall(x, z, w, d, h = 2.2) {
+function addWall(x, z, w, d, h = 2.2, rot = 0) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
   m.position.set(x, h / 2, z);
+  m.rotation.y = rot;
   m.castShadow = m.receiveShadow = true;
   scene.add(m);
-  walls.push({ mesh: m, min: { x: x - w / 2, z: z - d / 2 }, max: { x: x + w / 2, z: z + d / 2 } });
+  const halfW = w / 2, halfD = d / 2;
+  const wall = { mesh: m, x, z, halfW, halfD, rot };
+  const corners = [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]]
+    .map(([lx, lz]) => wallLocalToWorldDelta(wall, lx, lz));
+  wall.min = { x: x + Math.min(...corners.map(c => c.x)), z: z + Math.min(...corners.map(c => c.z)) };
+  wall.max = { x: x + Math.max(...corners.map(c => c.x)), z: z + Math.max(...corners.map(c => c.z)) };
+  walls.push(wall);
 }
 // 外圍
 addWall(0, -ARENA - 1, ARENA * 2 + 4, 2, 3);
 addWall(0, ARENA + 1, ARENA * 2 + 4, 2, 3);
 addWall(-ARENA - 1, 0, 2, ARENA * 2 + 4, 3);
 addWall(ARENA + 1, 0, 2, ARENA * 2 + 4, 3);
-// 內部掩體
+// 內部掩體（第 5 個欄位可選填旋轉角度，弧度，不填預設 0）
 const layout = [
   [-14, -14, 8, 3], [14, -14, 8, 3], [-14, 14, 8, 3], [14, 14, 8, 3],
   [0, -8, 3, 8], [0, 8, 3, 8], [-24, 0, 3, 10], [24, 0, 3, 10],
 ];
-layout.forEach(([x, z, w, d]) => addWall(x, z, w, d));
+layout.forEach(([x, z, w, d, rot]) => addWall(x, z, w, d, undefined, rot));
 
 // ---------- 玩家 ----------
 const player = {
@@ -278,20 +298,25 @@ addEventListener('mouseup', () => mouseDown = false);
 // ---------- 碰撞：圓 vs 牆(AABB) ----------
 function collideWalls(pos, radius) {
   for (const w of walls) {
-    const cx = Math.max(w.min.x, Math.min(pos.x, w.max.x));
-    const cz = Math.max(w.min.z, Math.min(pos.z, w.max.z));
-    const dx = pos.x - cx, dz = pos.z - cz;
+    const local = worldToWallLocal(w, pos.x, pos.z);
+    const cx = Math.max(-w.halfW, Math.min(local.x, w.halfW));
+    const cz = Math.max(-w.halfD, Math.min(local.z, w.halfD));
+    const dx = local.x - cx, dz = local.z - cz;
     const d2 = dx * dx + dz * dz;
     if (d2 < radius * radius) {
       const d = Math.sqrt(d2) || 0.001;
-      pos.x += (dx / d) * (radius - d);
-      pos.z += (dz / d) * (radius - d);
+      const push = wallLocalToWorldDelta(w, (dx / d) * (radius - d), (dz / d) * (radius - d));
+      pos.x += push.x;
+      pos.z += push.z;
     }
   }
 }
 function bulletHitsWall(pos) {
-  return walls.some(w =>
-    pos.x > w.min.x && pos.x < w.max.x && pos.z > w.min.z && pos.z < w.max.z && pos.y < w.mesh.geometry.parameters.height);
+  return walls.some(w => {
+    if (pos.y >= w.mesh.geometry.parameters.height) return false;
+    const local = worldToWallLocal(w, pos.x, pos.z);
+    return Math.abs(local.x) < w.halfW && Math.abs(local.z) < w.halfD;
+  });
 }
 
 // 無限生存模式：每殺一隻敵人呼叫，殺滿一波、且該波是 5 的倍數時暫停遊戲跳出配點畫面
